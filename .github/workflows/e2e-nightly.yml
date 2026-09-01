@@ -5,15 +5,34 @@ name: E2E Nightly (Playwright)
 
 on:
   schedule:
-    - cron: '0 10 * * *'
+    - cron: "0 10 * * *"
   workflow_dispatch:
+    inputs:
+      run_kind:
+        description: Why this run was requested.
+        required: false
+        default: manual
+        type: choice
+        options:
+          - manual
+          - merge
+      source_repository:
+        description: Forgejo repository that requested a merge run.
+        required: false
+        type: string
+      source_sha:
+        description: Commit SHA that requested a merge run.
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: e2e-playwright-nightly
-  cancel-in-progress: false
+  # Merge-triggered runs supersede one another. Scheduled nightlies remain
+  # independent, so a nearby merge cannot cancel the nightly health check.
+  group: e2e-playwright-${{ github.event_name == 'schedule' && 'nightly' || inputs.run_kind == 'merge' && 'merge' || 'manual' }}
+  cancel-in-progress: ${{ inputs.run_kind == 'merge' }}
 
 jobs:
   playwright-smoke:
@@ -69,18 +88,27 @@ jobs:
         working-directory: se-frontend
         env:
           CI: true
-          SE_E2E_STRIPE: '1'
+          SE_E2E_STRIPE: "1"
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
           VITE_STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_TEST_PUBLISHABLE_KEY }}
           STRIPE_WEBHOOK_SECRET: whsec_integration_test
-          SE_E2E_BACKEND_PORT: '8021'
+          SE_E2E_BACKEND_PORT: "8021"
           SE_E2E_BACKEND_URL: http://127.0.0.1:8021
           VITE_API_BASE_URL: http://127.0.0.1:8021
           DEMO_SEED_PASSWORD: getmein9000
-          MARKETPLACE_PLATFORM_FEE_BPS: '500'
+          MARKETPLACE_PLATFORM_FEE_BPS: "500"
           SE_BACKEND_DIR: ${{ github.workspace }}/se-backend
           SE_INTEGRATION_TESTS_DIR: ${{ github.workspace }}/se-integration-tests
         run: npm run test:e2e
+
+      - name: Record merge trigger provenance
+        if: inputs.run_kind == 'merge'
+        env:
+          SOURCE_REPOSITORY: ${{ inputs.source_repository }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          printf 'Merge-triggered by %s at %s\n' "$SOURCE_REPOSITORY" "$SOURCE_SHA"
 
       - name: Copy failure artifacts to May First
         if: failure()
