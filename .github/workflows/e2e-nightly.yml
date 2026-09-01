@@ -1,0 +1,125 @@
+name: E2E Nightly (Playwright)
+
+# Public GitHub Actions runner for the se-frontend Playwright smoke suite.
+# Failure artifacts are copied to May First, never uploaded as GitHub artifacts.
+
+on:
+  schedule:
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-playwright-nightly
+  cancel-in-progress: false
+
+jobs:
+  playwright-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Clone E2E repositories from Forgejo
+        env:
+          FORGEJO_E2E_TOKEN: ${{ secrets.FORGEJO_E2E_TOKEN }}
+          FRONTEND_BRANCH: main
+          BACKEND_BRANCH: main
+          INTEGRATION_TESTS_BRANCH: main
+        run: |
+          set -euo pipefail
+          : "${FORGEJO_E2E_TOKEN:?FORGEJO_E2E_TOKEN secret is required}"
+          clone_repo() {
+            local repo="$1" ref="$2"
+            git -c credential.helper= clone --depth 1 --branch "${ref}" \
+              "https://oauth2:${FORGEJO_E2E_TOKEN}@forgejo.cooperativecodebase.com/cooperative-codebase/${repo}.git" \
+              "${repo}"
+          }
+          clone_repo se-frontend "${FRONTEND_BRANCH}"
+          clone_repo se-backend "${BACKEND_BRANCH}"
+          clone_repo se-integration-tests "${INTEGRATION_TESTS_BRANCH}"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: se-frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: se-frontend/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: se-backend/.python-version
+
+      - name: Install frontend and backend dependencies
+        run: |
+          set -euo pipefail
+          npm ci --prefix se-frontend --no-audit --no-fund
+          python3 -m pip install --user -r se-backend/requirements.txt
+          (
+            cd se-backend
+            poetry install --no-interaction
+          )
+
+      - name: Install Playwright Chromium
+        working-directory: se-frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E smoke
+        working-directory: se-frontend
+        env:
+          CI: true
+          SE_E2E_STRIPE: '1'
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+          VITE_STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_TEST_PUBLISHABLE_KEY }}
+          STRIPE_WEBHOOK_SECRET: whsec_integration_test
+          SE_E2E_BACKEND_PORT: '8021'
+          SE_E2E_BACKEND_URL: http://127.0.0.1:8021
+          VITE_API_BASE_URL: http://127.0.0.1:8021
+          DEMO_SEED_PASSWORD: getmein9000
+          MARKETPLACE_PLATFORM_FEE_BPS: '500'
+          SE_BACKEND_DIR: ${{ github.workspace }}/se-backend
+          SE_INTEGRATION_TESTS_DIR: ${{ github.workspace }}/se-integration-tests
+        run: npm run test:e2e
+
+      - name: Copy failure artifacts to May First
+        if: failure()
+        env:
+          MAY_FIRST_AUTH_URL: ${{ secrets.MAY_FIRST_ARTIFACT_AUTH_URL }}
+          MAY_FIRST_HOST: ${{ secrets.MAY_FIRST_ARTIFACT_HOST }}
+          MAY_FIRST_USER: ${{ secrets.MAY_FIRST_ARTIFACT_USER }}
+          MAY_FIRST_PASSWORD: ${{ secrets.MAY_FIRST_ARTIFACT_PASSWORD }}
+          MAY_FIRST_ARTIFACT_DIR: ${{ secrets.MAY_FIRST_ARTIFACT_DIR }}
+        run: |
+          set -euo pipefail
+          : "${MAY_FIRST_AUTH_URL:?MAY_FIRST_ARTIFACT_AUTH_URL secret is required}"
+          : "${MAY_FIRST_HOST:?MAY_FIRST_ARTIFACT_HOST secret is required}"
+          : "${MAY_FIRST_USER:?MAY_FIRST_ARTIFACT_USER secret is required}"
+          : "${MAY_FIRST_PASSWORD:?MAY_FIRST_ARTIFACT_PASSWORD secret is required}"
+          : "${MAY_FIRST_ARTIFACT_DIR:?MAY_FIRST_ARTIFACT_DIR secret is required}"
+
+          artifacts=()
+          [[ -d se-frontend/test-results ]] && artifacts+=(se-frontend/test-results)
+          [[ -d se-frontend/e2e-report ]] && artifacts+=(se-frontend/e2e-report)
+          if [[ "${#artifacts[@]}" -eq 0 ]]; then
+            echo "No Playwright failure artifacts were produced."
+            exit 0
+          fi
+
+          curl --fail --silent --show-error "$MAY_FIRST_AUTH_URL" \
+            -X POST \
+            --data-urlencode "user_name=$MAY_FIRST_USER" \
+            --data-urlencode "user_pass=$MAY_FIRST_PASSWORD" \
+            --data-urlencode 'action=grant'
+          sudo apt-get update
+          sudo apt-get install --yes sshpass
+
+          archive="e2e-playwright-${GITHUB_RUN_ID}.tar.gz"
+          tar -czf "$archive" "${artifacts[@]}"
+          export SSHPASS="$MAY_FIRST_PASSWORD"
+          remote_run_dir="${MAY_FIRST_ARTIFACT_DIR%/}/${GITHUB_RUN_ID}"
+          sshpass -e ssh -o StrictHostKeyChecking=no "$MAY_FIRST_USER@$MAY_FIRST_HOST" \
+            "mkdir -p '$remote_run_dir'"
+          sshpass -e scp -o StrictHostKeyChecking=no "$archive" \
+            "$MAY_FIRST_USER@$MAY_FIRST_HOST:$remote_run_dir/$archive"
+          echo "Failure artifacts copied to May First run directory ${GITHUB_RUN_ID}."
