@@ -5,3 +5,4 @@
 2026-09-01T14:35:19Z	success
 2026-09-01T23:55:15Z	cancelled
 2026-09-02T00:05:14Z	cancelled
+2026-09-02T00:17:28Z	failure
