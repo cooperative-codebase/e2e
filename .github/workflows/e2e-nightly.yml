@@ -153,24 +153,6 @@ jobs:
         env:
           CI: true
           SE_E2E_STRIPE: "1"
-          SE_E2E_GUEST_CHECKOUT: "1"
-          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
-          VITE_STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_TEST_PUBLISHABLE_KEY }}
-          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_TEST_WEBHOOK_SECRET }}
-          SE_E2E_BACKEND_PORT: "8021"
-          SE_E2E_BACKEND_URL: http://127.0.0.1:8021
-          VITE_API_BASE_URL: http://127.0.0.1:8021
-          DEMO_SEED_PASSWORD: ${{ secrets.DEMO_SEED_PASSWORD }}
-          MARKETPLACE_PLATFORM_FEE_BPS: "500"
-          SE_BACKEND_DIR: ${{ github.workspace }}/se-backend
-          SE_INTEGRATION_TESTS_DIR: ${{ github.workspace }}/se-integration-tests
-        run: npm run test:e2e
-
-      - name: Verify production guest-disabled checkout gate
-        working-directory: se-frontend
-        env:
-          CI: true
-          SE_E2E_STRIPE: "1"
           SE_E2E_GUEST_CHECKOUT: "0"
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
           VITE_STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_TEST_PUBLISHABLE_KEY }}
@@ -182,7 +164,7 @@ jobs:
           MARKETPLACE_PLATFORM_FEE_BPS: "500"
           SE_BACKEND_DIR: ${{ github.workspace }}/se-backend
           SE_INTEGRATION_TESTS_DIR: ${{ github.workspace }}/se-integration-tests
-        run: npm run test:e2e -- checkout-variants.spec.ts --grep "signed-out checkout"
+        run: npm run test:e2e
 
       - name: Record merge trigger provenance
         if: inputs.run_kind == 'merge'
