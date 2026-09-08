@@ -24,6 +24,18 @@ on:
         description: Commit SHA that requested a merge run.
         required: false
         type: string
+      frontend_branch:
+        description: se-frontend branch (empty = selected E2E branch, then main fallback).
+        required: false
+        type: string
+      backend_branch:
+        description: se-backend branch (empty = selected E2E branch, then main fallback).
+        required: false
+        type: string
+      integration_tests_branch:
+        description: se-integration-tests branch (empty = selected E2E branch, then main fallback).
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -42,21 +54,73 @@ jobs:
       - name: Clone E2E repositories from Forgejo
         env:
           FORGEJO_E2E_TOKEN: ${{ secrets.FORGEJO_E2E_TOKEN }}
-          FRONTEND_BRANCH: main
-          BACKEND_BRANCH: main
-          INTEGRATION_TESTS_BRANCH: main
+          E2E_WORKFLOW_BRANCH: ${{ github.ref_name }}
+          RUN_KIND: ${{ inputs.run_kind }}
+          FRONTEND_BRANCH_INPUT: ${{ inputs.frontend_branch }}
+          BACKEND_BRANCH_INPUT: ${{ inputs.backend_branch }}
+          INTEGRATION_TESTS_BRANCH_INPUT: ${{ inputs.integration_tests_branch }}
         run: |
           set -euo pipefail
           : "${FORGEJO_E2E_TOKEN:?FORGEJO_E2E_TOKEN secret is required}"
+
+          repo_url() {
+            local repo="$1"
+            printf 'https://oauth2:%s@forgejo.cooperativecodebase.com/cooperative-codebase/%s.git' \
+              "${FORGEJO_E2E_TOKEN}" "${repo}"
+          }
+
+          resolve_branch() {
+            local repo="$1" requested="$2" url status
+            if [[ -z "${requested}" || "${requested}" == "main" ]]; then
+              printf 'main\n'
+              return
+            fi
+
+            url="$(repo_url "${repo}")"
+            set +e
+            git -c credential.helper= ls-remote --exit-code --heads \
+              "${url}" "refs/heads/${requested}" >/dev/null 2>&1
+            status=$?
+            set -e
+
+            case "${status}" in
+              0)
+                printf '%s\n' "${requested}"
+                ;;
+              2)
+                echo "::notice title=Partner branch lookup::Branch ${requested} not found on ${repo}; using main." >&2
+                printf 'main\n'
+                ;;
+              *)
+                echo "::error title=Partner branch lookup::Could not resolve ${repo}/${requested}; git ls-remote exited ${status}." >&2
+                return "${status}"
+                ;;
+            esac
+          }
+
+          default_partner_branch="${E2E_WORKFLOW_BRANCH}"
+          if [[ "${GITHUB_EVENT_NAME}" == "schedule" || "${RUN_KIND}" == "merge" ]]; then
+            default_partner_branch="main"
+          fi
+
+          requested_frontend="${FRONTEND_BRANCH_INPUT:-${default_partner_branch}}"
+          requested_backend="${BACKEND_BRANCH_INPUT:-${default_partner_branch}}"
+          requested_integration="${INTEGRATION_TESTS_BRANCH_INPUT:-${default_partner_branch}}"
+          frontend_ref="$(resolve_branch se-frontend "${requested_frontend}")"
+          backend_ref="$(resolve_branch se-backend "${requested_backend}")"
+          integration_ref="$(resolve_branch se-integration-tests "${requested_integration}")"
+
+          echo "Resolved Forgejo branches: frontend=${frontend_ref} backend=${backend_ref} integration-tests=${integration_ref}"
+
           clone_repo() {
             local repo="$1" ref="$2"
             git -c credential.helper= clone --depth 1 --branch "${ref}" \
-              "https://oauth2:${FORGEJO_E2E_TOKEN}@forgejo.cooperativecodebase.com/cooperative-codebase/${repo}.git" \
+              "$(repo_url "${repo}")" \
               "${repo}"
           }
-          clone_repo se-frontend "${FRONTEND_BRANCH}"
-          clone_repo se-backend "${BACKEND_BRANCH}"
-          clone_repo se-integration-tests "${INTEGRATION_TESTS_BRANCH}"
+          clone_repo se-frontend "${frontend_ref}"
+          clone_repo se-backend "${backend_ref}"
+          clone_repo se-integration-tests "${integration_ref}"
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -89,17 +153,36 @@ jobs:
         env:
           CI: true
           SE_E2E_STRIPE: "1"
+          SE_E2E_GUEST_CHECKOUT: "1"
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
           VITE_STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_TEST_PUBLISHABLE_KEY }}
-          STRIPE_WEBHOOK_SECRET: whsec_integration_test
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_TEST_WEBHOOK_SECRET }}
           SE_E2E_BACKEND_PORT: "8021"
           SE_E2E_BACKEND_URL: http://127.0.0.1:8021
           VITE_API_BASE_URL: http://127.0.0.1:8021
-          DEMO_SEED_PASSWORD: getmein9000
+          DEMO_SEED_PASSWORD: ${{ secrets.DEMO_SEED_PASSWORD }}
           MARKETPLACE_PLATFORM_FEE_BPS: "500"
           SE_BACKEND_DIR: ${{ github.workspace }}/se-backend
           SE_INTEGRATION_TESTS_DIR: ${{ github.workspace }}/se-integration-tests
         run: npm run test:e2e
+
+      - name: Verify production guest-disabled checkout gate
+        working-directory: se-frontend
+        env:
+          CI: true
+          SE_E2E_STRIPE: "1"
+          SE_E2E_GUEST_CHECKOUT: "0"
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+          VITE_STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_TEST_PUBLISHABLE_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_TEST_WEBHOOK_SECRET }}
+          SE_E2E_BACKEND_PORT: "8021"
+          SE_E2E_BACKEND_URL: http://127.0.0.1:8021
+          VITE_API_BASE_URL: http://127.0.0.1:8021
+          DEMO_SEED_PASSWORD: ${{ secrets.DEMO_SEED_PASSWORD }}
+          MARKETPLACE_PLATFORM_FEE_BPS: "500"
+          SE_BACKEND_DIR: ${{ github.workspace }}/se-backend
+          SE_INTEGRATION_TESTS_DIR: ${{ github.workspace }}/se-integration-tests
+        run: npm run test:e2e -- checkout-variants.spec.ts --grep "signed-out checkout"
 
       - name: Record merge trigger provenance
         if: inputs.run_kind == 'merge'
@@ -161,6 +244,8 @@ jobs:
     steps:
       - name: Check out run log
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Append run log and push
         env:
