@@ -191,3 +191,4 @@
 2026-10-04T03:59:50Z	cancelled
 2026-10-04T04:07:21Z	success
 2026-10-04T04:12:30Z	cancelled
+2026-10-04T04:20:45Z	failure
