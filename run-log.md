@@ -248,3 +248,4 @@
 2026-10-04T17:57:42Z	cancelled
 2026-10-04T18:07:13Z	success
 2026-10-04T18:40:09Z	success	full-smoke	37224672975
+2026-10-04T18:43:46Z	cancelled
