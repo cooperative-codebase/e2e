@@ -73,6 +73,19 @@ class NotificationTests(unittest.TestCase):
             "No application browser tests or payments were run.", submission["body"]
         )
 
+    def test_authorized_branch_exercise_keeps_actual_branch_and_test_subject(self):
+        result, submission = self.invoke(branch="codex/browser-pr-gate", soak=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(submission["args"][-1], "aaron@cooperativecodebase.com")
+        self.assertIn("[E2E notification test]", submission["args"][1])
+        self.assertIn("Branch: codex/browser-pr-gate", submission["body"])
+        self.assertIn("No application browser tests or payments", submission["body"])
+
+    def test_branch_exercise_failed_submission_is_an_error(self):
+        result, _ = self.invoke(branch="codex/browser-pr-gate", soak=True, mail_status=1)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("alert submitted", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

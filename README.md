@@ -26,16 +26,23 @@ runs use `main` unless an explicit override is supplied.
 Failed main runs with all application repositories on main submit an email through
 the existing May First artifact transport using `scripts/e2e-notify-failure.sh`.
 Aaron's recorded debug-soak recipient remains `aaron@cooperativecodebase.com`;
-PR and feature-branch runs do not send alerts. Submission failure is visible;
+PR and ordinary feature-branch runs do not send alerts. Submission failure is visible;
 successful `mail(1)` submission does not prove inbox receipt. No new credentials
 or browser host is required.
 
-For an authorized controlled delivery check, select `notification-soak` on workflow
-main. It deliberately fails before private clones, browser tests or payments and
+For an authorized controlled delivery check, select `notification-soak` on the
+reviewed workflow branch or main, with application branch overrides empty/main.
+This explicit test exception allows delivery verification before main activation;
+it preserves ordinary main-only alerts and reports the actual workflow branch.
+It deliberately fails before private clones, browser tests or payments and
 labels its email as a notification test. This expected failure is separate from
 application stability evidence. Historical `run-log.md` rows retain two columns;
 new rows include scope (`full-smoke`, `pr-subset` or `notification-soak`) and run ID.
 The recording job serializes writes across otherwise independent run groups.
+
+Pull requests also run the small notification/source-selection control tests.
+That check uses fake mail and Git without secrets, private clones or application
+dependencies; passing it does not establish real email delivery.
 
 The workflow requires the `DEMO_SEED_PASSWORD` and `STRIPE_TEST_WEBHOOK_SECRET`
 repository secrets in addition to the existing Forgejo, Stripe API, and May First

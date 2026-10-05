@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Email a failed main browser run through the existing May First mail transport.
+# Email a failed main browser run or an explicitly selected notification test.
 set -euo pipefail
 
-if [[ "${GITHUB_REF_NAME:-}" != "main" ]]; then
+if [[ "${GITHUB_REF_NAME:-}" != "main" && "${E2E_NOTIFICATION_SOAK:-0}" != "1" ]]; then
   echo "Skipping E2E failure email: branch is ${GITHUB_REF_NAME:-unknown}, not main"
   exit 0
 fi

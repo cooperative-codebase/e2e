@@ -179,8 +179,8 @@ jobs:
             echo "Failure artifacts copied to May First run directory ${GITHUB_RUN_ID}."
           fi
 
-      - name: Send main nightly failure email through existing May First transport
-        if: failure() && github.ref_name == 'main' && inputs.run_kind != 'pr' && (inputs.frontend_branch == '' || inputs.frontend_branch == 'main') && (inputs.backend_branch == '' || inputs.backend_branch == 'main') && (inputs.integration_tests_branch == '' || inputs.integration_tests_branch == 'main')
+      - name: Send authorized failure email through existing May First transport
+        if: failure() && (github.ref_name == 'main' || inputs.run_kind == 'notification-soak') && inputs.run_kind != 'pr' && (inputs.frontend_branch == '' || inputs.frontend_branch == 'main') && (inputs.backend_branch == '' || inputs.backend_branch == 'main') && (inputs.integration_tests_branch == '' || inputs.integration_tests_branch == 'main')
         env:
           MAY_FIRST_HOST: ${{ secrets.MAY_FIRST_ARTIFACT_HOST }}
           MAY_FIRST_USER: ${{ secrets.MAY_FIRST_ARTIFACT_USER }}
@@ -196,9 +196,11 @@ jobs:
           [[ -f scripts/e2e-notify-failure.sh ]] || { echo '::error::Failure notification script is missing.'; exit 1; }
           export SSHPASS="$MAY_FIRST_PASSWORD"
           remote_run_dir="${MAY_FIRST_ARTIFACT_DIR%/}/${GITHUB_RUN_ID}"
+          printf -v remote_command 'GITHUB_REF_NAME=%q GITHUB_SERVER_URL=https://github.com GITHUB_REPOSITORY=cooperative-codebase/e2e GITHUB_RUN_ID=%q GITHUB_SHA=%q ALERT_EMAIL=aaron@cooperativecodebase.com E2E_NOTIFICATION_SOAK=%q SE_E2E_REPORT_DIR=%q bash -s' \
+            "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" "$GITHUB_SHA" "$NOTIFICATION_SOAK" "$remote_run_dir"
           # The artifact step established this same host in known_hosts; do not disable checking here.
           sshpass -e ssh -o StrictHostKeyChecking=yes "$MAY_FIRST_USER@$MAY_FIRST_HOST" \
-            "GITHUB_REF_NAME=main GITHUB_SERVER_URL=https://github.com GITHUB_REPOSITORY=cooperative-codebase/e2e GITHUB_RUN_ID=${GITHUB_RUN_ID} GITHUB_SHA=${GITHUB_SHA} ALERT_EMAIL=aaron@cooperativecodebase.com E2E_NOTIFICATION_SOAK=${NOTIFICATION_SOAK} SE_E2E_REPORT_DIR='$remote_run_dir' bash -s" \
+            "$remote_command" \
             < scripts/e2e-notify-failure.sh
 
   record-run:
