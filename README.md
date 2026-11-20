@@ -34,7 +34,8 @@ and May First artifact secrets. See Forgejo `infrastructure/forgejo/ORG_ACTIONS_
 
 Polls open **renovate-bot** PRs on Forgejo, merges when CI is green (same scripts as
 `infrastructure` on May First formerly). Safety cron **45 2,8,14,20 UTC**; re-dispatches
-via GitHub API when CI is pending. **`RENOVATE_TOKEN`** only (merge + API).
+via GitHub API when CI is pending. **`RENOVATE_TOKEN`** (merge + API). Blocked land / dispatch failures email via Proton SMTP
+(`RENOVATE_LAND_SMTP_USER`, `RENOVATE_LAND_SMTP_PASSWORD` on GitHub — see Forgejo `ORG_ACTIONS_SECRETS.md`).
 
 ## Renovate maintain (`renovate-maintain.yml`)
 
