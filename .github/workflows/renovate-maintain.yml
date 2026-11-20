@@ -1,0 +1,122 @@
+name: Renovate maintain
+
+# Runs Forgejo Renovate dependency maintenance on ubuntu-latest (off May First).
+# Configuration lives in cooperative-codebase/infrastructure on Forgejo; cloned at runtime.
+
+on:
+  schedule:
+    - cron: "30 1,7,13,19 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Preview planned changes or create dependency reviews
+        required: false
+        default: preview
+        type: choice
+        options:
+          - preview
+          - updates
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renovate-maintain-${{ github.event_name == 'schedule' && 'scheduled' || 'manual' }}
+  cancel-in-progress: false
+
+env:
+  npm_config_ignore_scripts: "true"
+  LOG_LEVEL: warn
+
+jobs:
+  maintain-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      FORGEJO_E2E_TOKEN: ${{ secrets.FORGEJO_E2E_TOKEN }}
+      RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+      RENOVATE_GITHUB_COM_TOKEN: ${{ secrets.RENOVATE_GITHUB_COM_TOKEN }}
+      NODE_OPTIONS: --max-old-space-size=2048
+      RENOVATE_CONFIG_FILE: renovate/self-hosted-backend.cjs
+      UPDATE_MODE: ${{ github.event_name == 'schedule' && 'updates' || inputs.mode }}
+      RENOVATE_REPO_LABEL: backend
+    steps:
+      - uses: ./.github/actions/renovate-maintain-repo
+
+  maintain-frontend:
+    needs: maintain-backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      FORGEJO_E2E_TOKEN: ${{ secrets.FORGEJO_E2E_TOKEN }}
+      RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+      RENOVATE_GITHUB_COM_TOKEN: ${{ secrets.RENOVATE_GITHUB_COM_TOKEN }}
+      NODE_OPTIONS: --max-old-space-size=2048
+      RENOVATE_CONFIG_FILE: renovate/self-hosted-frontend.cjs
+      UPDATE_MODE: ${{ github.event_name == 'schedule' && 'updates' || inputs.mode }}
+      RENOVATE_REPO_LABEL: frontend
+    steps:
+      - uses: ./.github/actions/renovate-maintain-repo
+
+  maintain-integration:
+    needs: maintain-frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      FORGEJO_E2E_TOKEN: ${{ secrets.FORGEJO_E2E_TOKEN }}
+      RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+      RENOVATE_GITHUB_COM_TOKEN: ${{ secrets.RENOVATE_GITHUB_COM_TOKEN }}
+      NODE_OPTIONS: --max-old-space-size=2048
+      RENOVATE_CONFIG_FILE: renovate/self-hosted-integration.cjs
+      UPDATE_MODE: ${{ github.event_name == 'schedule' && 'updates' || inputs.mode }}
+      RENOVATE_REPO_LABEL: integration
+    steps:
+      - uses: ./.github/actions/renovate-maintain-repo
+
+  maintain-infrastructure:
+    needs: maintain-integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      FORGEJO_E2E_TOKEN: ${{ secrets.FORGEJO_E2E_TOKEN }}
+      RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+      RENOVATE_GITHUB_COM_TOKEN: ${{ secrets.RENOVATE_GITHUB_COM_TOKEN }}
+      NODE_OPTIONS: --max-old-space-size=3072
+      RENOVATE_CONFIG_FILE: renovate/self-hosted-infra.cjs
+      UPDATE_MODE: ${{ github.event_name == 'schedule' && 'updates' || inputs.mode }}
+      RENOVATE_REPO_LABEL: infrastructure
+    steps:
+      - uses: ./.github/actions/renovate-maintain-repo
+
+  record-run:
+    needs:
+      - maintain-backend
+      - maintain-frontend
+      - maintain-integration
+      - maintain-infrastructure
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out run log
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Append renovate run log and push
+        env:
+          RESULT_BACKEND: ${{ needs.maintain-backend.result }}
+          RESULT_FRONTEND: ${{ needs.maintain-frontend.result }}
+          RESULT_INTEGRATION: ${{ needs.maintain-integration.result }}
+          RESULT_INFRA: ${{ needs.maintain-infrastructure.result }}
+        run: |
+          set -euo pipefail
+          git pull --ff-only origin main
+          summary="${RESULT_BACKEND}/${RESULT_FRONTEND}/${RESULT_INTEGRATION}/${RESULT_INFRA}"
+          printf '%s\t%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "${summary}" >> renovate-run-log.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add renovate-run-log.md
+          git commit -m "chore: record Renovate maintain run"
+          git push origin HEAD:main
