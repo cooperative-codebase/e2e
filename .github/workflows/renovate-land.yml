@@ -32,7 +32,11 @@ jobs:
       FORGEJO_HOST: forgejo.cooperativecodebase.com
       FORGEJO_URL: https://forgejo.cooperativecodebase.com
       RENOVATE_LAND_API_SLEEP: "15"
-      RENOVATE_LAND_ALERT_GITHUB_ACTIONS: "1"
+      RENOVATE_LAND_SMTP_HOST: smtp.protonmail.ch
+      RENOVATE_LAND_SMTP_PORT: "587"
+      RENOVATE_LAND_SMTP_USER: ${{ secrets.RENOVATE_LAND_SMTP_USER }}
+      RENOVATE_LAND_SMTP_PASSWORD: ${{ secrets.RENOVATE_LAND_SMTP_PASSWORD }}
+      ALERT_EMAIL: aaron@cooperativecodebase.com
       SLOT_RETRY_COUNT_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.slot_retry_count || '0' }}
     steps:
       - uses: actions/checkout@v4
@@ -87,14 +91,19 @@ jobs:
         if: steps.land.outputs.exit_code == '8'
         env:
           GH_DISPATCH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RENOVATE_LAND_ALERT_FILE: ${{ runner.temp }}/renovate-land-alert.txt
         run: |
           set -euo pipefail
           raw="${SLOT_RETRY_COUNT_INPUT:-0}"
           if ! [[ "${raw}" =~ ^[0-9]+$ ]]; then raw=0; fi
           delay_sec="${RENOVATE_LAND_SLOT_RETRY_DELAY_SEC:-1200}"
           max_retries="${RENOVATE_LAND_SLOT_RETRY_MAX:-5}"
+          if ! [[ "${delay_sec}" =~ ^[0-9]+$ ]]; then delay_sec=1200; fi
+          if ! [[ "${max_retries}" =~ ^[0-9]+$ ]]; then max_retries=5; fi
           attempt=$((raw + 1))
           if [[ "${raw}" -ge "${max_retries}" ]]; then
+            bash infrastructure/scripts/renovate-land-notify-human.sh 9 \
+              "Renovate land: acquire-slot-only failures persisted after ${max_retries} automated waits — integration runner slots or stale claims (see se-integration-tests acquire-slot, /tmp/se-it-run-slots)."
             echo "::error::acquire-slot-only retries exhausted (${max_retries})" >&2
             exit 1
           fi
@@ -110,8 +119,39 @@ jobs:
           GH_DISPATCH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash .github/scripts/dispatch-renovate-land.sh waiting
 
+      - name: Email — land blocked or script error
+        if: steps.land.outputs.exit_code == '3' || steps.land.outputs.exit_code == '1'
+        working-directory: infrastructure
+        env:
+          RENOVATE_LAND_ALERT_FILE: ${{ runner.temp }}/renovate-land-alert.txt
+        run: |
+          bash scripts/renovate-land-notify-human.sh "${{ steps.land.outputs.exit_code }}" \
+            "Land pass stopped (exit ${{ steps.land.outputs.exit_code }}): blocked human triage or script error"
+
       - name: Fail on blocked or error
         if: steps.land.outputs.exit_code == '3' || steps.land.outputs.exit_code == '1'
         run: |
           echo "::error::Land pass exit ${{ steps.land.outputs.exit_code }} (3=blocked human, 1=error)" >&2
           exit 1
+
+      - name: Email — re-queue dispatch failed
+        if: steps.land.outputs.exit_code == '2' && failure() && steps.requeue.outcome == 'failure'
+        working-directory: infrastructure
+        run: |
+          bash scripts/renovate-land-notify-human.sh requeue \
+            "CI still pending but workflow_dispatch re-queue failed — land may stall until safety cron or manual dispatch"
+
+      - name: Fail after re-queue dispatch failure
+        if: steps.land.outputs.exit_code == '2' && failure() && steps.requeue.outcome == 'failure'
+        run: exit 1
+
+      - name: Email — acquire-slot re-queue dispatch failed
+        if: steps.land.outputs.exit_code == '8' && failure() && steps.slot_retry.outcome == 'failure'
+        working-directory: infrastructure
+        run: |
+          bash scripts/renovate-land-notify-human.sh requeue-slot \
+            "Renovate land: acquire-slot retry sleep finished but workflow_dispatch failed"
+
+      - name: Fail after acquire-slot re-queue dispatch failure
+        if: steps.land.outputs.exit_code == '8' && failure() && steps.slot_retry.outcome == 'failure'
+        run: exit 1
