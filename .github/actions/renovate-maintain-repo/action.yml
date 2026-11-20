@@ -1,0 +1,78 @@
+name: Renovate maintain (one repository)
+description: Clone infrastructure from Forgejo and run one Renovate self-hosted config.
+
+runs:
+  using: composite
+  steps:
+    - name: Clone infrastructure from Forgejo
+      shell: bash
+      env:
+        FORGEJO_E2E_TOKEN: ${{ env.FORGEJO_E2E_TOKEN }}
+      run: |
+        set -euo pipefail
+        : "${FORGEJO_E2E_TOKEN:?FORGEJO_E2E_TOKEN secret is required}"
+        git -c credential.helper= clone --depth 1 --branch main \
+          "https://oauth2:${FORGEJO_E2E_TOKEN}@forgejo.cooperativecodebase.com/cooperative-codebase/infrastructure.git" \
+          infrastructure
+
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: "24.11"
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.13.5"
+
+    - name: Install Poetry
+      shell: bash
+      run: pip install 'poetry==2.1.3'
+
+    - name: Prepare pinned Renovate CLI
+      shell: bash
+      working-directory: infrastructure
+      run: |
+        set -euo pipefail
+        VERSION="$(cat renovate/cli-version.txt)"
+        npm exec --yes --package="renovate@${VERSION}" -- bash renovate/bootstrap-cli.sh
+
+    - name: Verify toolchain
+      shell: bash
+      working-directory: infrastructure
+      run: |
+        set -euo pipefail
+        node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major !== 24 || minor < 11) throw new Error("Node 24.11+ required")'
+        python3 -c 'import sys; assert sys.version_info[:3] == (3, 13, 5)'
+        poetry --version >/dev/null
+        git --version >/dev/null
+        npm --version >/dev/null
+        echo "Toolchain OK"
+
+    - name: Run Renovate
+      shell: bash
+      working-directory: infrastructure
+      env:
+        RENOVATE_TOKEN: ${{ env.RENOVATE_TOKEN }}
+        RENOVATE_GITHUB_COM_TOKEN: ${{ env.RENOVATE_GITHUB_COM_TOKEN }}
+        RENOVATE_REPO_LABEL: ${{ env.RENOVATE_REPO_LABEL }}
+        UPDATE_MODE: ${{ env.UPDATE_MODE }}
+      run: |
+        set -euo pipefail
+        : "${RENOVATE_TOKEN:?RENOVATE_TOKEN secret is required}"
+        : "${RENOVATE_CLI:?Pinned CLI bootstrap must succeed}"
+        : "${RENOVATE_REPO_LABEL:?RENOVATE_REPO_LABEL is required}"
+        log="${RUNNER_TEMP}/renovate.log"
+        set +e
+        case "${UPDATE_MODE}" in
+          preview) "${RENOVATE_CLI}" --dry-run=full >>"${log}" 2>&1 ;;
+          updates) "${RENOVATE_CLI}" >>"${log}" 2>&1 ;;
+          *)
+            echo "Unknown UPDATE_MODE" >&2
+            exit 1
+            ;;
+        esac
+        code=$?
+        set -e
+        echo "Renovate maintain-${RENOVATE_REPO_LABEL} finished (mode=${UPDATE_MODE}, exit=${code})"
+        exit "${code}"
