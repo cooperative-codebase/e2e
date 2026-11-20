@@ -1,0 +1,117 @@
+name: Renovate batch land
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Why this land pass ran (maintain-complete, waiting, manual, safety-net)
+        type: string
+        default: manual
+      slot_retry_count:
+        description: Consecutive acquire-slot-only retries (0 = first attempt)
+        type: string
+        default: "0"
+  schedule:
+    - cron: "45 2,8,14,20 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renovate-land
+  cancel-in-progress: false
+
+jobs:
+  land-pass:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      actions: write
+    env:
+      RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+      FORGEJO_HOST: forgejo.cooperativecodebase.com
+      FORGEJO_URL: https://forgejo.cooperativecodebase.com
+      RENOVATE_LAND_API_SLEEP: "15"
+      RENOVATE_LAND_ALERT_GITHUB_ACTIONS: "1"
+      SLOT_RETRY_COUNT_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.slot_retry_count || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone infrastructure from Forgejo
+        run: |
+          set -euo pipefail
+          : "${RENOVATE_TOKEN:?RENOVATE_TOKEN secret is required}"
+          git -c credential.helper= clone --depth 1 --branch main \
+            "https://oauth2:${RENOVATE_TOKEN}@forgejo.cooperativecodebase.com/cooperative-codebase/infrastructure.git" \
+            infrastructure
+
+      - name: Install jq
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq jq
+
+      - name: Preflight Forgejo API
+        working-directory: infrastructure
+        run: |
+          set -euo pipefail
+          unset FORGEJO_TOKEN
+          export FORGEJO_TOKEN="${RENOVATE_TOKEN}"
+          login="$(curl -fsS -H "Authorization: token ${FORGEJO_TOKEN}" \
+            "${FORGEJO_URL}/api/v1/user" | jq -r .login)"
+          code="$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: token ${FORGEJO_TOKEN}" \
+            "${FORGEJO_URL}/api/v1/repos/cooperative-codebase/se-integration-tests/pulls?state=open&limit=5")"
+          echo "forgejo_api_user=${login} se_integration_tests_pulls_http=${code}"
+          if [[ "$login" != "renovate-bot" ]]; then
+            echo "::error::API user must be renovate-bot, got ${login}" >&2
+            exit 1
+          fi
+          if [[ "$code" != "200" ]]; then
+            echo "::error::Preflight IT pulls HTTP ${code}" >&2
+            exit 1
+          fi
+
+      - name: One land pass
+        id: land
+        working-directory: infrastructure
+        env:
+          RENOVATE_LAND_ALERT_FILE: ${{ runner.temp }}/renovate-land-alert.txt
+        run: |
+          set +e
+          unset FORGEJO_TOKEN
+          export FORGEJO_TOKEN="${RENOVATE_TOKEN}"
+          bash scripts/renovate-batch-land.sh
+          code=$?
+          echo "exit_code=${code}" >> "${GITHUB_OUTPUT}"
+          exit 0
+
+      - name: Handle acquire-slot transient (exit 8)
+        id: slot_retry
+        if: steps.land.outputs.exit_code == '8'
+        env:
+          GH_DISPATCH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          raw="${SLOT_RETRY_COUNT_INPUT:-0}"
+          if ! [[ "${raw}" =~ ^[0-9]+$ ]]; then raw=0; fi
+          delay_sec="${RENOVATE_LAND_SLOT_RETRY_DELAY_SEC:-1200}"
+          max_retries="${RENOVATE_LAND_SLOT_RETRY_MAX:-5}"
+          attempt=$((raw + 1))
+          if [[ "${raw}" -ge "${max_retries}" ]]; then
+            echo "::error::acquire-slot-only retries exhausted (${max_retries})" >&2
+            exit 1
+          fi
+          echo "Sleeping ${delay_sec}s then re-dispatching land"
+          sleep "${delay_sec}"
+          bash .github/scripts/dispatch-renovate-land.sh \
+            "waiting-acquire-slot-retry-${attempt}" "${attempt}"
+
+      - name: Re-queue while CI pending
+        id: requeue
+        if: steps.land.outputs.exit_code == '2'
+        env:
+          GH_DISPATCH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/dispatch-renovate-land.sh waiting
+
+      - name: Fail on blocked or error
+        if: steps.land.outputs.exit_code == '3' || steps.land.outputs.exit_code == '1'
+        run: |
+          echo "::error::Land pass exit ${{ steps.land.outputs.exit_code }} (3=blocked human, 1=error)" >&2
+          exit 1

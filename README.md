@@ -30,12 +30,19 @@ use `main` unless an explicit override is supplied.
 E2E requires `DEMO_SEED_PASSWORD`, `STRIPE_TEST_WEBHOOK_SECRET`, Forgejo clone, Stripe,
 and May First artifact secrets. See Forgejo `infrastructure/forgejo/ORG_ACTIONS_SECRETS.md`.
 
+## Renovate batch land (`renovate-land.yml`)
+
+Polls open **renovate-bot** PRs on Forgejo, merges when CI is green (same scripts as
+`infrastructure` on May First formerly). Safety cron **45 2,8,14,20 UTC**; re-dispatches
+via GitHub API when CI is pending. **`RENOVATE_TOKEN`** only (merge + API).
+
 ## Renovate maintain (`renovate-maintain.yml`)
 
 Dependency maintenance for the four marketplace repositories using Renovate OSS config from
 Forgejo `infrastructure` (`renovate/self-hosted-*.cjs`). Scheduled at **01:30, 07:30, 13:30,
 19:30 UTC** (`updates` mode). Manual dispatch defaults to **preview**.
 
-Runs on `ubuntu-latest` so Renovate is not subject to May First **~1 GB** forever-job limits
-(site **391805** OOM). Requires GitHub secrets: `FORGEJO_E2E_TOKEN` (clone), `RENOVATE_TOKEN`,
-`RENOVATE_GITHUB_COM_TOKEN`.
+Uses `ubuntu-24.04` (same as E2E) so Renovate is not subject to May First **~1 GB** forever-job limits
+(site **391805** OOM). Clones `infrastructure` with **`RENOVATE_TOKEN`** (same Forgejo
+**renovate-bot** PAT as the updater). Optional: `RENOVATE_GITHUB_COM_TOKEN` for github.com
+release metadata.

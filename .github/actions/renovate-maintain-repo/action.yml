@@ -7,18 +7,18 @@ runs:
     - name: Clone infrastructure from Forgejo
       shell: bash
       env:
-        FORGEJO_E2E_TOKEN: ${{ env.FORGEJO_E2E_TOKEN }}
+        RENOVATE_TOKEN: ${{ env.RENOVATE_TOKEN }}
       run: |
         set -euo pipefail
-        : "${FORGEJO_E2E_TOKEN:?FORGEJO_E2E_TOKEN secret is required}"
+        : "${RENOVATE_TOKEN:?RENOVATE_TOKEN secret is required}"
         git -c credential.helper= clone --depth 1 --branch main \
-          "https://oauth2:${FORGEJO_E2E_TOKEN}@forgejo.cooperativecodebase.com/cooperative-codebase/infrastructure.git" \
+          "https://oauth2:${RENOVATE_TOKEN}@forgejo.cooperativecodebase.com/cooperative-codebase/infrastructure.git" \
           infrastructure
 
     - name: Set up Node
       uses: actions/setup-node@v4
       with:
-        node-version: "24.11"
+        node-version: "24.15"
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -34,20 +34,16 @@ runs:
       working-directory: infrastructure
       run: |
         set -euo pipefail
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq build-essential
         VERSION="$(cat renovate/cli-version.txt)"
-        npm exec --yes --package="renovate@${VERSION}" -- bash renovate/bootstrap-cli.sh
-
-    - name: Verify toolchain
-      shell: bash
-      working-directory: infrastructure
-      run: |
-        set -euo pipefail
-        node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major !== 24 || minor < 11) throw new Error("Node 24.11+ required")'
-        python3 -c 'import sys; assert sys.version_info[:3] == (3, 13, 5)'
-        poetry --version >/dev/null
-        git --version >/dev/null
-        npm --version >/dev/null
-        echo "Toolchain OK"
+        CLI_PREFIX="${RUNNER_TEMP}/renovate-cli"
+        rm -rf "${CLI_PREFIX}"
+        NPM_CONFIG_IGNORE_SCRIPTS=false npm install --prefix "${CLI_PREFIX}" --no-package-lock \
+          --include=optional "renovate@${VERSION}" "re2@1.27.0"
+        REN_PKG="${CLI_PREFIX}/node_modules/renovate"
+        node -e 'const {createRequire}=require("node:module");const {resolve}=require("node:path");const RE2=createRequire(resolve(process.argv[1],"package.json"))("re2");if(!new RE2("^ok$").test("ok"))throw new Error("Native RE2 verification failed")' "${REN_PKG}"
+        printf 'RENOVATE_CLI=%s\n' "${CLI_PREFIX}/node_modules/.bin/renovate" >> "${GITHUB_ENV}"
 
     - name: Run Renovate
       shell: bash
@@ -62,15 +58,13 @@ runs:
         : "${RENOVATE_TOKEN:?RENOVATE_TOKEN secret is required}"
         : "${RENOVATE_CLI:?Pinned CLI bootstrap must succeed}"
         : "${RENOVATE_REPO_LABEL:?RENOVATE_REPO_LABEL is required}"
+        export npm_config_ignore_scripts=true
         log="${RUNNER_TEMP}/renovate.log"
         set +e
         case "${UPDATE_MODE}" in
           preview) "${RENOVATE_CLI}" --dry-run=full >>"${log}" 2>&1 ;;
           updates) "${RENOVATE_CLI}" >>"${log}" 2>&1 ;;
-          *)
-            echo "Unknown UPDATE_MODE" >&2
-            exit 1
-            ;;
+          *) echo "Unknown UPDATE_MODE" >&2; exit 1 ;;
         esac
         code=$?
         set -e
