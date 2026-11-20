@@ -86,12 +86,32 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/renovate-maintain-repo
 
+  dispatch-land:
+    needs:
+      - maintain-backend
+      - maintain-frontend
+      - maintain-integration
+      - maintain-infrastructure
+    if: >-
+      ${{ !cancelled() && !contains(needs.*.result, 'failure') &&
+      !contains(needs.*.result, 'cancelled') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start Renovate land workflow
+        env:
+          GH_DISPATCH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/dispatch-renovate-land.sh maintain-complete
+
   record-run:
     needs:
       - maintain-backend
       - maintain-frontend
       - maintain-integration
       - maintain-infrastructure
+      - dispatch-land
     if: always()
     runs-on: ubuntu-latest
     permissions:

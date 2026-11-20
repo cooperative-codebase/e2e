@@ -30,6 +30,12 @@ use `main` unless an explicit override is supplied.
 E2E requires `DEMO_SEED_PASSWORD`, `STRIPE_TEST_WEBHOOK_SECRET`, Forgejo clone, Stripe,
 and May First artifact secrets. See Forgejo `infrastructure/forgejo/ORG_ACTIONS_SECRETS.md`.
 
+## Renovate batch land (`renovate-land.yml`)
+
+Polls open **renovate-bot** PRs on Forgejo, merges when CI is green (same scripts as
+`infrastructure` on May First formerly). Safety cron **45 2,8,14,20 UTC**; re-dispatches
+via GitHub API when CI is pending. **`RENOVATE_TOKEN`** only (merge + API).
+
 ## Renovate maintain (`renovate-maintain.yml`)
 
 Dependency maintenance for the four marketplace repositories using Renovate OSS config from
