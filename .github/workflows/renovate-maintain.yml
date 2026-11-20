@@ -1,7 +1,6 @@
 name: Renovate maintain
 
-# Runs Forgejo Renovate dependency maintenance on ubuntu-latest (off May First).
-# Configuration lives in cooperative-codebase/infrastructure on Forgejo; cloned at runtime.
+# Forgejo Renovate maintain on ubuntu-24.04 (off May First ci-ops). Config from infrastructure.
 
 on:
   schedule:
@@ -25,15 +24,13 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  npm_config_ignore_scripts: "true"
   LOG_LEVEL: warn
 
 jobs:
   maintain-backend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      FORGEJO_E2E_TOKEN: ${{ secrets.FORGEJO_E2E_TOKEN }}
       RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
       RENOVATE_GITHUB_COM_TOKEN: ${{ secrets.RENOVATE_GITHUB_COM_TOKEN }}
       NODE_OPTIONS: --max-old-space-size=2048
@@ -41,14 +38,14 @@ jobs:
       UPDATE_MODE: ${{ github.event_name == 'schedule' && 'updates' || inputs.mode }}
       RENOVATE_REPO_LABEL: backend
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/renovate-maintain-repo
 
   maintain-frontend:
     needs: maintain-backend
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      FORGEJO_E2E_TOKEN: ${{ secrets.FORGEJO_E2E_TOKEN }}
       RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
       RENOVATE_GITHUB_COM_TOKEN: ${{ secrets.RENOVATE_GITHUB_COM_TOKEN }}
       NODE_OPTIONS: --max-old-space-size=2048
@@ -56,14 +53,14 @@ jobs:
       UPDATE_MODE: ${{ github.event_name == 'schedule' && 'updates' || inputs.mode }}
       RENOVATE_REPO_LABEL: frontend
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/renovate-maintain-repo
 
   maintain-integration:
     needs: maintain-frontend
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      FORGEJO_E2E_TOKEN: ${{ secrets.FORGEJO_E2E_TOKEN }}
       RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
       RENOVATE_GITHUB_COM_TOKEN: ${{ secrets.RENOVATE_GITHUB_COM_TOKEN }}
       NODE_OPTIONS: --max-old-space-size=2048
@@ -71,14 +68,14 @@ jobs:
       UPDATE_MODE: ${{ github.event_name == 'schedule' && 'updates' || inputs.mode }}
       RENOVATE_REPO_LABEL: integration
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/renovate-maintain-repo
 
   maintain-infrastructure:
     needs: maintain-integration
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      FORGEJO_E2E_TOKEN: ${{ secrets.FORGEJO_E2E_TOKEN }}
       RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
       RENOVATE_GITHUB_COM_TOKEN: ${{ secrets.RENOVATE_GITHUB_COM_TOKEN }}
       NODE_OPTIONS: --max-old-space-size=3072
@@ -86,6 +83,7 @@ jobs:
       UPDATE_MODE: ${{ github.event_name == 'schedule' && 'updates' || inputs.mode }}
       RENOVATE_REPO_LABEL: infrastructure
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/renovate-maintain-repo
 
   record-run:
@@ -99,12 +97,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Check out run log
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: main
-
-      - name: Append renovate run log and push
+      - name: Append renovate run log
         env:
           RESULT_BACKEND: ${{ needs.maintain-backend.result }}
           RESULT_FRONTEND: ${{ needs.maintain-frontend.result }}

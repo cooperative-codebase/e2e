@@ -36,6 +36,7 @@ Dependency maintenance for the four marketplace repositories using Renovate OSS 
 Forgejo `infrastructure` (`renovate/self-hosted-*.cjs`). Scheduled at **01:30, 07:30, 13:30,
 19:30 UTC** (`updates` mode). Manual dispatch defaults to **preview**.
 
-Runs on `ubuntu-latest` so Renovate is not subject to May First **~1 GB** forever-job limits
-(site **391805** OOM). Requires GitHub secrets: `FORGEJO_E2E_TOKEN` (clone), `RENOVATE_TOKEN`,
-`RENOVATE_GITHUB_COM_TOKEN`.
+Uses `ubuntu-24.04` (same as E2E) so Renovate is not subject to May First **~1 GB** forever-job limits
+(site **391805** OOM). Clones `infrastructure` with **`RENOVATE_TOKEN`** (same Forgejo
+**renovate-bot** PAT as the updater). Optional: `RENOVATE_GITHUB_COM_TOKEN` for github.com
+release metadata.
