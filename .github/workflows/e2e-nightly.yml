@@ -16,6 +16,7 @@ on:
         options:
           - manual
           - merge
+          - notification-soak
       source_repository:
         description: Forgejo repository that requested a merge run.
         required: false
@@ -53,6 +54,18 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
+      - name: Check out E2E workflow and notification script
+        uses: actions/checkout@v4
+
+      - name: Verify notification failure handling without sending mail
+        run: python3 -m unittest discover -s .github/tests -v
+
+      - name: Controlled failure notification exercise
+        if: inputs.run_kind == 'notification-soak'
+        run: |
+          echo 'Controlled notification exercise: deliberately failing before private clones, browser tests or payments.'
+          exit 1
+
       - name: Clone E2E repositories from Forgejo
         env:
           FORGEJO_E2E_TOKEN: ${{ secrets.FORGEJO_E2E_TOKEN }}
@@ -198,7 +211,6 @@ jobs:
           [[ -d se-frontend/e2e-report ]] && artifacts+=(se-frontend/e2e-report)
           if [[ "${#artifacts[@]}" -eq 0 ]]; then
             echo "No Playwright failure artifacts were produced."
-            exit 0
           fi
 
           curl --fail --silent --show-error "$MAY_FIRST_AUTH_URL" \
@@ -209,15 +221,40 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes sshpass
 
-          archive="e2e-playwright-${GITHUB_RUN_ID}.tar.gz"
-          tar -czf "$archive" "${artifacts[@]}"
           export SSHPASS="$MAY_FIRST_PASSWORD"
           remote_run_dir="${MAY_FIRST_ARTIFACT_DIR%/}/${GITHUB_RUN_ID}"
           sshpass -e ssh -o StrictHostKeyChecking=no "$MAY_FIRST_USER@$MAY_FIRST_HOST" \
             "mkdir -p '$remote_run_dir'"
-          sshpass -e scp -o StrictHostKeyChecking=no "$archive" \
-            "$MAY_FIRST_USER@$MAY_FIRST_HOST:$remote_run_dir/$archive"
-          echo "Failure artifacts copied to May First run directory ${GITHUB_RUN_ID}."
+          if [[ "${#artifacts[@]}" -gt 0 ]]; then
+            archive="e2e-playwright-${GITHUB_RUN_ID}.tar.gz"
+            tar -czf "$archive" "${artifacts[@]}"
+            sshpass -e scp -o StrictHostKeyChecking=no "$archive" \
+              "$MAY_FIRST_USER@$MAY_FIRST_HOST:$remote_run_dir/$archive"
+            echo "Failure artifacts copied to May First run directory ${GITHUB_RUN_ID}."
+          fi
+
+      - name: Send authorized failure email through existing May First transport
+        if: failure() && (github.ref_name == 'main' || inputs.run_kind == 'notification-soak') && (inputs.frontend_branch == '' || inputs.frontend_branch == 'main') && (inputs.backend_branch == '' || inputs.backend_branch == 'main') && (inputs.integration_tests_branch == '' || inputs.integration_tests_branch == 'main')
+        env:
+          MAY_FIRST_HOST: ${{ secrets.MAY_FIRST_ARTIFACT_HOST }}
+          MAY_FIRST_USER: ${{ secrets.MAY_FIRST_ARTIFACT_USER }}
+          MAY_FIRST_PASSWORD: ${{ secrets.MAY_FIRST_ARTIFACT_PASSWORD }}
+          MAY_FIRST_ARTIFACT_DIR: ${{ secrets.MAY_FIRST_ARTIFACT_DIR }}
+          NOTIFICATION_SOAK: ${{ inputs.run_kind == 'notification-soak' && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          : "${MAY_FIRST_HOST:?existing artifact host is required}"
+          : "${MAY_FIRST_USER:?existing artifact user is required}"
+          : "${MAY_FIRST_PASSWORD:?existing artifact credential is required}"
+          : "${MAY_FIRST_ARTIFACT_DIR:?existing artifact directory is required}"
+          [[ -f scripts/e2e-notify-failure.sh ]] || { echo '::error::Failure notification script is missing.'; exit 1; }
+          export SSHPASS="$MAY_FIRST_PASSWORD"
+          remote_run_dir="${MAY_FIRST_ARTIFACT_DIR%/}/${GITHUB_RUN_ID}"
+          printf -v remote_command 'GITHUB_REF_NAME=%q GITHUB_SERVER_URL=https://github.com GITHUB_REPOSITORY=cooperative-codebase/e2e GITHUB_RUN_ID=%q GITHUB_SHA=%q ALERT_EMAIL=aaron@cooperativecodebase.com E2E_NOTIFICATION_SOAK=%q SE_E2E_REPORT_DIR=%q bash -s' \
+            "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" "$GITHUB_SHA" "$NOTIFICATION_SOAK" "$remote_run_dir"
+          sshpass -e ssh -o StrictHostKeyChecking=yes "$MAY_FIRST_USER@$MAY_FIRST_HOST" \
+            "$remote_command" \
+            < scripts/e2e-notify-failure.sh
 
   record-run:
     needs: playwright-smoke
@@ -234,10 +271,11 @@ jobs:
       - name: Append run log and push
         env:
           RUN_RESULT: ${{ needs.playwright-smoke.result }}
+          SMOKE_SCOPE: ${{ inputs.run_kind == 'notification-soak' && 'notification-soak' || 'full-smoke' }}
         run: |
           set -euo pipefail
           git pull --ff-only origin main
-          printf '%s\t%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$RUN_RESULT" >> run-log.md
+          printf '%s\t%s\t%s\t%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$RUN_RESULT" "$SMOKE_SCOPE" "$GITHUB_RUN_ID" >> run-log.md
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add run-log.md
