@@ -5,6 +5,31 @@ source and bot credentials stay on Forgejo; repositories are cloned at workflow 
 through GitHub secrets. Workflow logs intentionally avoid echoing Renovate or test output;
 public status is summarized in `run-log.md` and `renovate-run-log.md`.
 
+## Scope
+
+**CI workflows only** (GitHub Actions): Playwright E2E, Renovate maintain/land helpers, and related automation. **Application source** lives on **Forgejo** (`se-frontend`, `se-backend`, etc.). You do **not** need all marketplace repos cloned to change a workflow in this repo.
+
+## Issues
+
+- **GitHub:** [cooperative-codebase/e2e issues](https://github.com/cooperative-codebase/e2e/issues)
+- **Security:** [SECURITY.md](SECURITY.md) (email for sensitive reports)
+- **Application bugs:** file in the relevant Forgejo repository, not here.
+
+## Architecture
+
+- Marketplace system map on Forgejo: [MARKETPLACE_SYSTEM.md](https://forgejo.cooperativecodebase.com/cooperative-codebase/se-backend/src/branch/main/docs/marketplace/MARKETPLACE_SYSTEM.md)
+- Frontend E2E specs: [se-frontend `e2e/`](https://forgejo.cooperativecodebase.com/cooperative-codebase/se-frontend/src/branch/main/e2e/)
+
+## Open source
+
+| Resource | |
+|----------|--|
+| [Contributing](CONTRIBUTING.md) | Contribution process |
+| [Code of conduct](CODE_OF_CONDUCT.md) | Community expectations |
+| [Security](SECURITY.md) | Private vulnerability reports |
+| [License](LICENSE) | AGPL-3.0-only |
+| [Trademarks](TRADEMARK.md) | Brand policy |
+
 ## Playwright E2E (`e2e-nightly.yml`)
 
 The Playwright job uses `ubuntu-24.04` so `actions/setup-python` can install the
@@ -50,4 +75,4 @@ release metadata.
 
 ## License
 
-Source code is licensed under the [GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`). See [TRADEMARK.md](TRADEMARK.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+[GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`). Copyright (c) 2026 Cooperative Codebase, LLC.
