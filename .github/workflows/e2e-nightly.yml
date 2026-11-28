@@ -100,6 +100,20 @@ jobs:
             esac
           }
 
+          resolve_head_sha() {
+            local repo="$1" ref="$2" url sha
+            url="$(repo_url "${repo}")"
+            sha="$(
+              git -c credential.helper= ls-remote "${url}" "refs/heads/${ref}" \
+                | awk 'NR==1 { print $1; exit }'
+            )"
+            if [[ -z "${sha}" ]]; then
+              echo "::error title=Partner branch lookup::No commit for ${repo}/${ref}." >&2
+              return 1
+            fi
+            printf '%s\n' "${sha}"
+          }
+
           default_partner_branch="${E2E_WORKFLOW_BRANCH}"
           if [[ "${GITHUB_EVENT_NAME}" == "schedule" || "${RUN_KIND}" == "merge" ]]; then
             default_partner_branch="main"
@@ -111,8 +125,14 @@ jobs:
           frontend_ref="$(resolve_branch se-frontend "${requested_frontend}")"
           backend_ref="$(resolve_branch se-backend "${requested_backend}")"
           integration_ref="$(resolve_branch se-integration-tests "${requested_integration}")"
+          frontend_sha="$(resolve_head_sha se-frontend "${frontend_ref}")"
+          backend_sha="$(resolve_head_sha se-backend "${backend_ref}")"
+          integration_sha="$(resolve_head_sha se-integration-tests "${integration_ref}")"
 
-          echo "Resolved Forgejo branches: frontend=${frontend_ref} backend=${backend_ref} integration-tests=${integration_ref}"
+          echo "Resolved Forgejo partner refs (branch @ commit):"
+          echo "  se-frontend: ${frontend_ref} @ ${frontend_sha}"
+          echo "  se-backend: ${backend_ref} @ ${backend_sha}"
+          echo "  se-integration-tests: ${integration_ref} @ ${integration_sha}"
 
           clone_repo() {
             local repo="$1" ref="$2"
