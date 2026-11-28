@@ -79,8 +79,8 @@ Backend-only, integration-test, or workflow-only repos can ignore this subsectio
 
 ## Security and conduct
 
-- Report security concerns privately to project maintainers; do not open public issues for exploitable details.
-- Be respectful in issues and reviews. Harassment or bad-faith arguments are not tolerated.
+- Report security vulnerabilities per [SECURITY.md](SECURITY.md) — **do not** open public issues for exploitable details.
+- Participation in issues and pull requests is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## License
 
