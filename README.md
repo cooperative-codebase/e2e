@@ -57,9 +57,8 @@ and May First artifact secrets. See Forgejo `infrastructure/forgejo/ORG_ACTIONS_
 
 **PR subset (`run_kind: pr-subset`):** Forgejo `se-frontend` PRs dispatch this workflow with
 `frontend_branch` = PR head and partners on `main`. Runs `npm run test:e2e:pr-gate` (browse,
-auth, auth-redirects, checkout). Posts final commit status `e2e-playwright` on the PR head via
-Forgejo API using GitHub secret `CROSS_REPO_TOKEN` (same PAT as Forgejo integration CI;
-`FORGEJO_E2E_TOKEN` remains clone-only). Does not append `run-log.md`.
+auth, auth-redirects, checkout). Posts final commit status `e2e-playwright` on the PR head via Forgejo API (`FORGEJO_E2E_TOKEN`
+with `write:repository` on `se-frontend`). Does not append `run-log.md`.
 
 ### Failure email (`#603` / #416 A3)
 

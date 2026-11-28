@@ -295,22 +295,21 @@ jobs:
     steps:
       - name: Post Forgejo commit status (e2e-playwright)
         env:
-          # Same Forgejo PAT as dispatch-github-e2e-pr.yml (write:repository for commit statuses).
-          CROSS_REPO_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
+          FORGEJO_E2E_TOKEN: ${{ secrets.FORGEJO_E2E_TOKEN }}
           REPO: ${{ inputs.source_repository }}
           SHA: ${{ inputs.source_sha }}
           RUN_URL: https://github.com/cooperative-codebase/e2e/actions/runs/${{ github.run_id }}
           RESULT: ${{ needs.playwright-smoke.result }}
         run: |
           set -euo pipefail
-          : "${CROSS_REPO_TOKEN:?CROSS_REPO_TOKEN secret is required (Forgejo PAT with write:repository)}"
+          : "${FORGEJO_E2E_TOKEN:?FORGEJO_E2E_TOKEN secret is required}"
           case "${RESULT}" in
             success) STATE=success ;;
             *) STATE=failure ;;
           esac
           curl -fsS -X POST \
             "https://forgejo.cooperativecodebase.com/api/v1/repos/${REPO}/statuses/${SHA}" \
-            -H "Authorization: token ${CROSS_REPO_TOKEN}" \
+            -H "Authorization: token ${FORGEJO_E2E_TOKEN}" \
             -H "Content-Type: application/json" \
             -d "$(jq -nc \
               --arg state "${STATE}" \
