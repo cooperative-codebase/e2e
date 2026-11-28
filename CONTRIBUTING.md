@@ -85,6 +85,7 @@ Backend-only, integration-test, or workflow-only repos can ignore this subsectio
 ## License
 
 - **Source code:** [GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`). Copyright (c) 2026 Cooperative Codebase, LLC.
+- **Third-party software:** See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for dependency policy and blocked license types.
 - **Trademarks:** [TRADEMARK.md](TRADEMARK.md) — the license does not grant rights to use our product names or logos in a way that suggests official affiliation.
 - **Contributions:** By submitting a pull request, you agree your contribution is licensed under the same terms. A formal contributor agreement may be added later.
 
