@@ -80,7 +80,16 @@ Backend-only, integration-test, or workflow-only repos can ignore this subsectio
 ## Security and conduct
 
 - Report security concerns privately to project maintainers; do not open public issues for exploitable details.
-- Be respectful in issues and reviews. Harassment or bad-faith arguments are not tolerated.## This repository (e2e)
+- Be respectful in issues and reviews. Harassment or bad-faith arguments are not tolerated.
+
+## License
+
+- **Source code:** [GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`). Copyright (c) 2026 Cooperative Codebase, LLC.
+- **Trademarks:** [TRADEMARK.md](TRADEMARK.md) — the license does not grant rights to use our product names or logos in a way that suggests official affiliation.
+- **Contributions:** By submitting a pull request, you agree your contribution is licensed under the same terms. A formal contributor agreement may be added later.
+
+
+## This repository (e2e)
 
 - This repo is hosted on **GitHub** (`cooperative-codebase/e2e`); the same contribution standards apply. Open pull requests against **`main`**.
 - Changes are usually GitHub Actions workflows and supporting scripts — run or describe the workflow you touched; no marketplace app code lives here.

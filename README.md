@@ -47,3 +47,7 @@ Uses `ubuntu-24.04` (same as E2E) so Renovate is not subject to May First **~1 G
 (site **391805** OOM). Clones `infrastructure` with **`RENOVATE_TOKEN`** (same Forgejo
 **renovate-bot** PAT as the updater). Optional: `RENOVATE_GITHUB_COM_TOKEN` for github.com
 release metadata.
+
+## License
+
+Source code is licensed under the [GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`). See [TRADEMARK.md](TRADEMARK.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
