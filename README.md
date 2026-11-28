@@ -55,6 +55,20 @@ use `main` unless an explicit override is supplied.
 E2E requires `DEMO_SEED_PASSWORD`, `STRIPE_TEST_WEBHOOK_SECRET`, Forgejo clone, Stripe,
 and May First artifact secrets. See Forgejo `infrastructure/forgejo/ORG_ACTIONS_SECRETS.md`.
 
+### Failure email (`#603` / #416 A3)
+
+On failed **main** runs (partner branches empty or `main`), the workflow pipes
+`scripts/e2e-notify-failure.sh` to the existing May First artifact host so `mail(1)`
+submits through the site formatter. Recipient: **`aaron@cooperativecodebase.com`** (debug
+soak per #416).
+
+**Controlled verification:** `workflow_dispatch` with `run_kind` = **`notification-soak`**
+fails before Forgejo clones or Playwright; use an E2E workflow branch that includes the
+notify hook. Leave partner branch inputs empty. Record run URL and log excerpt in
+`se-frontend/docs/testing/E2E_PLAYWRIGHT_IMPLEMENTATION_DECISIONS.md`.
+
+PR workflow `check-controls.yml` runs `test_e2e_notify.py` (stub `mail`, no delivery).
+
 ## Renovate batch land (`renovate-land.yml`)
 
 Polls open **renovate-bot** PRs on Forgejo, merges when CI is green (same scripts as
