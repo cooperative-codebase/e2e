@@ -55,6 +55,11 @@ use `main` unless an explicit override is supplied.
 E2E requires `DEMO_SEED_PASSWORD`, `STRIPE_TEST_WEBHOOK_SECRET`, Forgejo clone, Stripe,
 and May First artifact secrets. See Forgejo `infrastructure/forgejo/ORG_ACTIONS_SECRETS.md`.
 
+**PR subset (`run_kind: pr-subset`):** Forgejo `se-frontend` PRs dispatch this workflow with
+`frontend_branch` = PR head and partners on `main`. Runs `npm run test:e2e:pr-gate` (browse,
+auth, auth-redirects, checkout). Posts final commit status `e2e-playwright` on the PR head via
+Forgejo API (does not append `run-log.md`).
+
 ### Failure email (`#603` / #416 A3)
 
 On failed **main** runs (partner branches empty or `main`), the workflow pipes

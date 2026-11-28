@@ -17,6 +17,7 @@ on:
           - manual
           - merge
           - notification-soak
+          - pr-subset
       source_repository:
         description: Forgejo repository that requested a merge run.
         required: false
@@ -44,15 +45,15 @@ permissions:
 concurrency:
   # Merge-triggered runs supersede one another. Scheduled nightlies remain
   # independent, so a nearby merge cannot cancel the nightly health check.
-  group: e2e-playwright-${{ github.event_name == 'schedule' && 'nightly' || inputs.run_kind == 'merge' && 'merge' || 'manual' }}
-  cancel-in-progress: ${{ inputs.run_kind == 'merge' }}
+  group: e2e-playwright-${{ github.event_name == 'schedule' && 'nightly' || inputs.run_kind == 'merge' && 'merge' || inputs.run_kind == 'pr-subset' && 'pr-subset' || 'manual' }}
+  cancel-in-progress: ${{ inputs.run_kind == 'merge' || inputs.run_kind == 'pr-subset' }}
 
 jobs:
   playwright-smoke:
     # Python 3.13.5 from se-backend/.python-version has no Ubuntu 26.04 build.
     # Keep this image compatible with the backend pin when upgrading the runner.
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: ${{ inputs.run_kind == 'pr-subset' && 20 || 30 }}
     steps:
       - name: Check out E2E workflow and notification script
         uses: actions/checkout@v4
@@ -128,7 +129,7 @@ jobs:
           }
 
           default_partner_branch="${E2E_WORKFLOW_BRANCH}"
-          if [[ "${GITHUB_EVENT_NAME}" == "schedule" || "${RUN_KIND}" == "merge" ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "schedule" || "${RUN_KIND}" == "merge" || "${RUN_KIND}" == "pr-subset" ]]; then
             default_partner_branch="main"
           fi
 
@@ -199,7 +200,14 @@ jobs:
           MARKETPLACE_PLATFORM_FEE_BPS: "500"
           SE_BACKEND_DIR: ${{ github.workspace }}/se-backend
           SE_INTEGRATION_TESTS_DIR: ${{ github.workspace }}/se-integration-tests
-        run: npm run test:e2e
+          RUN_KIND: ${{ inputs.run_kind }}
+        run: |
+          set -euo pipefail
+          if [[ "${RUN_KIND}" == "pr-subset" ]]; then
+            npm run test:e2e:pr-gate
+          else
+            npm run test:e2e
+          fi
 
       - name: Record merge trigger provenance
         if: inputs.run_kind == 'merge'
@@ -276,9 +284,42 @@ jobs:
             "$remote_command" \
             < scripts/e2e-notify-failure.sh
 
+  post-forgejo-pr-status:
+    needs: playwright-smoke
+    if: >-
+      always() &&
+      inputs.run_kind == 'pr-subset' &&
+      inputs.source_sha != '' &&
+      inputs.source_repository != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post Forgejo commit status (e2e-playwright)
+        env:
+          FORGEJO_E2E_TOKEN: ${{ secrets.FORGEJO_E2E_TOKEN }}
+          REPO: ${{ inputs.source_repository }}
+          SHA: ${{ inputs.source_sha }}
+          RUN_URL: https://github.com/cooperative-codebase/e2e/actions/runs/${{ github.run_id }}
+          RESULT: ${{ needs.playwright-smoke.result }}
+        run: |
+          set -euo pipefail
+          : "${FORGEJO_E2E_TOKEN:?FORGEJO_E2E_TOKEN secret is required}"
+          case "${RESULT}" in
+            success) STATE=success ;;
+            *) STATE=failure ;;
+          esac
+          curl -fsS -X POST \
+            "https://forgejo.cooperativecodebase.com/api/v1/repos/${REPO}/statuses/${SHA}" \
+            -H "Authorization: token ${FORGEJO_E2E_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -nc \
+              --arg state "${STATE}" \
+              --arg target_url "${RUN_URL}" \
+              --arg description "Playwright PR subset (${STATE})" \
+              '{state: $state, target_url: $target_url, description: $description, context: "e2e-playwright"}')"
+
   record-run:
     needs: playwright-smoke
-    if: always()
+    if: always() && inputs.run_kind != 'pr-subset'
     runs-on: ubuntu-latest
     permissions:
       contents: write
